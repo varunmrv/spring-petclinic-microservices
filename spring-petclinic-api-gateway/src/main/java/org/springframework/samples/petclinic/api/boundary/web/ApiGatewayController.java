@@ -17,14 +17,21 @@ package org.springframework.samples.petclinic.api.boundary.web;
 
 import org.springframework.cloud.client.circuitbreaker.ReactiveCircuitBreaker;
 import org.springframework.cloud.client.circuitbreaker.ReactiveCircuitBreakerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.samples.petclinic.api.application.CustomersServiceClient;
 import org.springframework.samples.petclinic.api.application.VisitsServiceClient;
 import org.springframework.samples.petclinic.api.dto.OwnerDetails;
+import org.springframework.samples.petclinic.api.dto.VisitDetails;
 import org.springframework.samples.petclinic.api.dto.Visits;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -63,6 +70,49 @@ public class ApiGatewayController {
                     .map(addVisitsToOwner(owner))
             );
 
+    }
+
+    /**
+     * Updates an existing visit for a pet.
+     *
+     * @param petId   the ID of the pet
+     * @param visitId the ID of the visit to update
+     * @param visit   the updated visit payload (date and/or description)
+     * @return a {@link Mono} emitting the updated {@link VisitDetails} on success (200 OK),
+     *         or a 404 Not Found response if the visit does not exist
+     */
+    @PutMapping("owners/*/pets/{petId}/visits/{visitId}")
+    public Mono<VisitDetails> updateVisit(
+            @PathVariable("petId") int petId,
+            @PathVariable("visitId") int visitId,
+            @RequestBody VisitDetails visit) {
+        return visitsServiceClient.updateVisit(petId, visitId, visit)
+            .onErrorMap(
+                WebClientResponseException.class,
+                ex -> ex.getStatusCode() == HttpStatus.NOT_FOUND
+                    ? new VisitNotFoundException(visitId)
+                    : ex);
+    }
+
+    /**
+     * Deletes an existing visit for a pet.
+     *
+     * @param petId   the ID of the pet
+     * @param visitId the ID of the visit to delete
+     * @return a {@link Mono} completing empty on success (204 No Content),
+     *         or a 404 Not Found response if the visit does not exist
+     */
+    @DeleteMapping("owners/*/pets/{petId}/visits/{visitId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> deleteVisit(
+            @PathVariable("petId") int petId,
+            @PathVariable("visitId") int visitId) {
+        return visitsServiceClient.deleteVisit(petId, visitId)
+            .onErrorMap(
+                WebClientResponseException.class,
+                ex -> ex.getStatusCode() == HttpStatus.NOT_FOUND
+                    ? new VisitNotFoundException(visitId)
+                    : ex);
     }
 
     private Function<Visits, OwnerDetails> addVisitsToOwner(OwnerDetails owner) {
