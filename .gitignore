@@ -21,3 +21,9 @@ target/
 generated/
 
 **/.DS_Store
+
+# SASVA internal (auto-added for team mode)
+.sasva/snapshots/
+.sasva/builtin-tasks/
+.sasva/migration/
+.sasva/workflows/
