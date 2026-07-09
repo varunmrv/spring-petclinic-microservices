@@ -1,0 +1,141 @@
+{
+  "exploration_summary": "Spring PetClinic Microservices is a distributed, cloud-native Java application built with Spring Boot 4.0.1 and Spring Cloud 2025.1.0. It consists of 7 microservices: customers-service (owners/pets domain), visits-service (visit records), vets-service (veterinarians), genai-service (Spring AI chatbot), api-gateway (Spring Cloud Gateway + AngularJS frontend), config-server, and discovery-server (Eureka). Services communicate via REST using WebClient (reactive, in api-gateway) and RestClient (synchronous, in genai-service). The data layer uses Spring Data JPA with HSQLDB (default in-memory) or MySQL. The Visit entity has fields: id, pet_id, visit_date (DATE), and description (VARCHAR 8192). Currently, VisitResource only exposes POST (create) and GET (read) endpoints — no update or delete. The API Gateway aggregates owner + visit data reactively with Resilience4j circuit breaker. The GenAI service uses Spring AI tools to interact with owners/pets but has NO visit-related tools. DTOs are duplicated between api-gateway and genai-service. Testing uses JUnit 5 + @WebMvcTest slice tests with @MockitoBean. The GitHub issue #507 likely targets a functional gap in the visits domain — most probably adding update/delete visit endpoints, adding visit management to the GenAI chatbot, or adding owner search functionality. The codebase is well-structured with consistent patterns: *Resource controller naming, Builder pattern for DTOs, @Timed Micrometer annotations, and SLF4J logging.",
+  "detailed_exploration_notes": "Spring PetClinic Microservices (Spring Boot 4.0.1, Spring Cloud 2025.1.0, Java 17) has 7 microservices. Key architecture: api-gateway (port 8080, reactive WebClient, AngularJS UI) routes to customers-service (owners/pets), visits-service (visit records), vets-service (vets), and genai-service (Spring AI chatbot). Config-server (8888) and discovery-server/Eureka (8761) provide infrastructure. Critical files: VisitResource.java has POST+GET only (no PUT/DELETE); Visit entity has id/pet_id/visit_date/description; VisitRepository extends JpaRepository with findByPetId and findByPetIdIn. ApiGatewayController.java reactively merges owner+visits data with circuit breaker fallback. VisitsServiceClient.java calls visits-service via WebClient. PetclinicTools.java has @Tool methods for owners/pets/vets but NO visit tools. AIDataProvider.java calls customers-service via Eureka+RestClient. DTOs duplicated: VisitDetails exists in both api-gateway and genai-service. Schema: visits table has id/pet_id/visit_date/description in both HSQLDB and MySQL variants. Key gaps: (1) No PUT/DELETE on visits, (2) No visit tools in GenAI, (3) No owner search/filter. Risks: dual DB schema sync required for any schema changes, reactive vs sync mixing, DTO duplication across services, minimal test coverage (only @WebMvcTest slice tests). Patterns: *Resource controller naming, Builder inner classes, @Timed annotations, @Valid+@Min validation, ResourceNotFoundException for 404s, @MockitoBean in tests (Spring Boot 4.x).",
+  "tech_stack": {
+    "language": "Java 17",
+    "framework": "Spring Boot 4.0.1 + Spring Cloud 2025.1.0",
+    "key_libraries": [
+      "Spring Cloud Gateway - API routing and load balancing",
+      "Spring Cloud Netflix Eureka - service discovery",
+      "Spring Cloud Config - centralized configuration",
+      "Spring Cloud Circuit Breaker (Resilience4j) - fault tolerance",
+      "Spring Data JPA - ORM and repository pattern",
+      "Spring AI - LLM integration (OpenAI/Azure OpenAI)",
+      "Micrometer + OpenTelemetry - observability and tracing",
+      "Project Reactor (WebFlux) - reactive programming in api-gateway",
+      "Zipkin - distributed tracing",
+      "Prometheus + Grafana - metrics",
+      "AngularJS - frontend UI",
+      "Chaos Monkey - resilience testing"
+    ],
+    "database": "HSQLDB (in-memory, default) or MySQL 8.x (via 'mysql' Spring profile), accessed via Spring Data JPA",
+    "testing": "JUnit 5 + Spring Boot @WebMvcTest slice tests + Mockito (@MockitoBean)"
+  },
+  "questions": [
+    {
+      "id": 1,
+      "question": "What is the core feature request in GitHub issue #507 that this PRD should address?",
+      "context": "The codebase has several notable gaps: VisitResource only has POST/GET (no PUT/DELETE), the GenAI chatbot has no visit-related tools, and OwnerResource has no search/filter capability. Without direct access to the issue text, the PRD scope needs to be confirmed.",
+      "options": [
+        {
+          "id": "A",
+          "label": "Add Update/Delete Visit Endpoints",
+          "description": "Add PUT and DELETE REST endpoints to VisitResource, update the DB schema if needed, and expose these through the API Gateway. This fills the most obvious CRUD gap in the visits-service."
+        },
+        {
+          "id": "B",
+          "label": "Add Visit Management to GenAI Chatbot",
+          "description": "Add @Tool methods to PetclinicTools for listing, creating, and/or updating visits via the AI chatbot, with corresponding AIDataProvider methods calling visits-service."
+        },
+        {
+          "id": "C",
+          "label": "Add Owner Search/Filter Capability",
+          "description": "Add search/filter parameters to the GET /owners endpoint in OwnerResource (e.g., by last name), update the OwnerRepository query, and reflect this in the frontend and GenAI tools."
+        },
+        {
+          "id": "D",
+          "label": "Add a New Field or Attribute to Visits",
+          "description": "Extend the Visit entity with a new field (e.g., vet assignment, status, cost), requiring schema migration for both HSQLDB and MySQL, entity/DTO updates across visits-service, api-gateway, and genai-service."
+        }
+      ],
+      "default": "A"
+    },
+    {
+      "id": 2,
+      "question": "Which services should be in scope for the implementation changes?",
+      "context": "The microservices architecture means changes often ripple across multiple services. For example, a new visit field requires updates to visits-service (entity/schema), api-gateway (DTO/client), and genai-service (DTO). The PRD should clearly define service boundaries.",
+      "options": [
+        {
+          "id": "A",
+          "label": "visits-service Only",
+          "description": "Limit changes to the visits-service (VisitResource, Visit entity, VisitRepository, schema). Minimal blast radius, fastest to implement."
+        },
+        {
+          "id": "B",
+          "label": "visits-service + api-gateway",
+          "description": "Update visits-service for backend logic and api-gateway for DTO/client changes and frontend exposure. Covers the full user-facing flow without touching GenAI."
+        },
+        {
+          "id": "C",
+          "label": "All Affected Services (visits + api-gateway + genai)",
+          "description": "Update all three services: visits-service for core logic, api-gateway for routing/DTOs, and genai-service for AI tool support. Full end-to-end implementation including chatbot capability."
+        }
+      ],
+      "default": "B"
+    },
+    {
+      "id": 3,
+      "question": "What level of test coverage should the PRD require for new/changed code?",
+      "context": "The existing codebase has minimal test coverage — only @WebMvcTest slice tests for VisitResource, PetResource, and VetResource. There are no integration tests or end-to-end tests. The PRD should specify expectations.",
+      "options": [
+        {
+          "id": "A",
+          "label": "Unit/Slice Tests Only",
+          "description": "Follow the existing pattern: add @WebMvcTest slice tests for new endpoints using @MockitoBean. Fast to write, consistent with current codebase style."
+        },
+        {
+          "id": "B",
+          "label": "Slice Tests + Integration Tests",
+          "description": "Add @WebMvcTest tests for new endpoints AND at least one @SpringBootTest integration test that exercises the full service stack with an in-memory database."
+        },
+        {
+          "id": "C",
+          "label": "Full Test Pyramid",
+          "description": "Add unit tests, slice tests, integration tests, and optionally contract tests between services. Highest quality but significantly more effort."
+        }
+      ],
+      "default": "A"
+    },
+    {
+      "id": 4,
+      "question": "Should the PRD include frontend (AngularJS UI) changes in scope?",
+      "context": "The API Gateway serves an AngularJS frontend with components for owner-list, owner-details, owner-form, pet-form, and vet-list. Any new backend capabilities (e.g., edit/delete visit) would ideally be surfaced in the UI, but this adds frontend scope.",
+      "options": [
+        {
+          "id": "A",
+          "label": "Backend API Only",
+          "description": "Focus the PRD on REST API changes only. Frontend updates are out of scope or tracked as a separate issue. Faster delivery, API-first approach."
+        },
+        {
+          "id": "B",
+          "label": "Backend + Frontend UI",
+          "description": "Include AngularJS UI changes to expose new backend capabilities to end users. Full feature completeness but requires AngularJS knowledge and more effort."
+        }
+      ],
+      "default": "A"
+    },
+    {
+      "id": 5,
+      "question": "How should database schema changes (if any) be handled across HSQLDB and MySQL?",
+      "context": "The project maintains separate SQL schema and data files for both HSQLDB (default/test) and MySQL (production profile). Any schema changes must be applied to both. The project currently uses static SQL files rather than Flyway/Liquibase migrations.",
+      "options": [
+        {
+          "id": "A",
+          "label": "Update Static SQL Files Only",
+          "description": "Follow the existing pattern: update schema.sql and data.sql for both hsqldb/ and mysql/ directories. Simple, consistent with current approach, no new tooling."
+        },
+        {
+          "id": "B",
+          "label": "Introduce Flyway/Liquibase Migrations",
+          "description": "Add a database migration tool (Flyway or Liquibase) to manage schema evolution properly. Better for production use but adds significant scope and complexity beyond the issue."
+        },
+        {
+          "id": "C",
+          "label": "No Schema Changes Required",
+          "description": "The feature can be implemented without any database schema changes (e.g., using existing fields differently or adding only application-layer logic)."
+        }
+      ],
+      "default": "A"
+    }
+  ]
+}
